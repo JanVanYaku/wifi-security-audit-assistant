@@ -1,0 +1,30 @@
+<!--
+#######################################################################
+# Author: Lehlohonolo Adolf Matobakele  
+# Email: lehlohonolo.matobakele@gov.ls
+# Contacxt: 00266 62320704
+#######################################################################
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="286" viewBox="0 0 1100 286" role="img" aria-label="WiFi Security Audit Assistant terminal demonstration">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#161b22"/>
+    </linearGradient>
+  </defs>
+  <rect width="100%" height="100%" rx="14" fill="#0b0f14"/>
+  <rect x="18" y="18" width="1064" height="250" rx="12" fill="url(#bg)" stroke="#30363d"/>
+  <circle cx="46" cy="43" r="7" fill="#ff5f56"/>
+  <circle cx="70" cy="43" r="7" fill="#ffbd2e"/>
+  <circle cx="94" cy="43" r="7" fill="#27c93f"/>
+  <text x="128" y="48" fill="#58a6ff" font-size="17" font-weight="700" font-family="Segoe UI, Arial, sans-serif">WiFi Security Audit Assistant</text>
+  <line x1="18" y1="62" x2="1082" y2="62" stroke="#30363d"/>
+  <text x="26" y="70" fill="#d6e7ff" font-size="16" font-family="Cascadia Mono, Consolas, Menlo, monospace">PS&gt; python .\wifi_audit_assistant.py wizard --confirm-authorized</text>
+  <text x="26" y="96" fill="#8bd5ff" font-size="16" font-family="Cascadia Mono, Consolas, Menlo, monospace">Step 1 - Environment: safe OS-level WiFi inventory commands only</text>
+  <text x="26" y="122" fill="#c9d1d9" font-size="16" font-family="Cascadia Mono, Consolas, Menlo, monospace">Wireless Interfaces: Wi-Fi | connected | WPA2-Personal | CCMP</text>
+  <text x="26" y="148" fill="#c9d1d9" font-size="16" font-family="Cascadia Mono, Consolas, Menlo, monospace">Visible Networks: HomeLab WPA3, Office WPA2, Guest Open</text>
+  <text x="26" y="174" fill="#ffd166" font-size="16" font-family="Cascadia Mono, Consolas, Menlo, monospace">HIGH: Guest appears open or unauthenticated</text>
+  <text x="26" y="200" fill="#ffd166" font-size="16" font-family="Cascadia Mono, Consolas, Menlo, monospace">MEDIUM: Saved open profile may auto-join without protection</text>
+  <text x="26" y="226" fill="#7ee787" font-size="16" font-family="Cascadia Mono, Consolas, Menlo, monospace">JSON report saved to reports\wifi_audit_20260715_012000.json</text>
+  <text x="26" y="252" fill="#8bd5ff" font-size="16" font-family="Cascadia Mono, Consolas, Menlo, monospace">No cracking, deauth, packet injection, handshakes, or password dumping</text>
+</svg>
