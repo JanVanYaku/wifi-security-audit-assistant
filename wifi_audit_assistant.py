@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import argparse
 import csv
+import getpass
 import json
+import math
 import platform
 import re
 import shutil
@@ -97,6 +99,39 @@ class AuditReport:
 
 
 SEVERITY_ORDER = {"CRITICAL": 5, "HIGH": 4, "MEDIUM": 3, "LOW": 2, "INFO": 1}
+
+LEARNING_MODULES = [
+    (
+        "Authorization and Scope",
+        "Only test WiFi networks you own or are explicitly authorized to review. "
+        "Define the SSIDs, devices, time window, and allowed checks before you begin.",
+    ),
+    (
+        "Encryption Basics",
+        "Open and WEP networks are unsafe. WPA2-AES is still common, while WPA3 "
+        "is preferred when all devices support it. TKIP should be disabled.",
+    ),
+    (
+        "Passphrase Strength",
+        "A long unique passphrase resists guessing better than a short complex one. "
+        "Use a password manager and avoid reused or personal phrases.",
+    ),
+    (
+        "WPS and Router Admin",
+        "Disable WPS where possible, change default router admin passwords, update "
+        "firmware, and restrict router management to trusted devices.",
+    ),
+    (
+        "Rogue or Evil-Twin Awareness",
+        "Duplicate SSIDs and unexpected open networks should be investigated. "
+        "Confirm access points by inventory and location rather than by SSID alone.",
+    ),
+    (
+        "What This Assistant Avoids",
+        "It does not automate deauthentication, handshake capture, packet injection, "
+        "credential capture, monitor mode, or password cracking.",
+    ),
+]
 
 
 def clean(value: str, limit: int = 220) -> str:
@@ -626,6 +661,212 @@ def write_csv_findings(path: Path, findings: list[RiskFinding]) -> None:
             writer.writerow(asdict(item))
 
 
+def render_learning_modules() -> None:
+    """Print high-level defensive WiFi learning modules."""
+
+    table = Table(title="Safe WiFi Security Learning Path", show_lines=True)
+    table.add_column("#")
+    table.add_column("Topic", overflow="fold")
+    table.add_column("What To Learn", overflow="fold")
+
+    for index, (topic, detail) in enumerate(LEARNING_MODULES, start=1):
+        table.add_row(str(index), topic, detail)
+    console.print(table)
+
+
+def run_learn(args: argparse.Namespace) -> int:
+    """Run safe learning mode."""
+
+    require_authorization(args.confirm_authorized)
+    render_learning_modules()
+    console.print(
+        "[dim]This learning mode explains defensive concepts only. It does not "
+        "include offensive WiFi procedures or attack automation.[/dim]"
+    )
+    return 0
+
+
+def passphrase_pool_size(passphrase: str) -> int:
+    """Estimate character pool size for a passphrase."""
+
+    pool = 0
+    if re.search(r"[a-z]", passphrase):
+        pool += 26
+    if re.search(r"[A-Z]", passphrase):
+        pool += 26
+    if re.search(r"\d", passphrase):
+        pool += 10
+    if re.search(r"[^A-Za-z0-9]", passphrase):
+        pool += 33
+    return max(pool, 1)
+
+
+def passphrase_warnings(passphrase: str) -> list[str]:
+    """Return simple defensive warnings for a sample passphrase."""
+
+    warnings: list[str] = []
+    lowered = passphrase.lower()
+    common_fragments = ["password", "admin", "qwerty", "welcome", "letmein", "internet", "wifi"]
+
+    if len(passphrase) < 12:
+        warnings.append("Use at least 12 characters; 16 or more is better for WiFi.")
+    if len(passphrase) < 16:
+        warnings.append("Consider a longer phrase made of several unrelated words.")
+    if any(fragment in lowered for fragment in common_fragments):
+        warnings.append("Avoid common words such as password, admin, qwerty, welcome, or wifi.")
+    if re.search(r"(.)\1\1", passphrase):
+        warnings.append("Avoid repeated characters or obvious patterns.")
+    if re.search(r"(1234|abcd|qwer|202[0-9])", lowered):
+        warnings.append("Avoid sequences, years, and keyboard patterns.")
+    return warnings
+
+
+def passphrase_rating(entropy_bits: float) -> tuple[str, str]:
+    """Return a readable rating from estimated entropy."""
+
+    if entropy_bits >= 90:
+        return "STRONG", "green"
+    if entropy_bits >= 70:
+        return "GOOD", "cyan"
+    if entropy_bits >= 50:
+        return "FAIR", "yellow"
+    return "WEAK", "red"
+
+
+def run_passphrase_check(args: argparse.Namespace) -> int:
+    """Estimate defensive strength of a sample WiFi passphrase."""
+
+    require_authorization(args.confirm_authorized)
+    console.print(
+        Panel.fit(
+            "For privacy, test a similar pattern instead of typing your real "
+            "production WiFi password. The value is not saved to reports.",
+            title="Passphrase Safety",
+            border_style="yellow",
+        )
+    )
+
+    passphrase = args.sample_passphrase
+    if passphrase is None:
+        passphrase = getpass.getpass("Sample passphrase to evaluate: ")
+
+    pool = passphrase_pool_size(passphrase)
+    entropy_bits = len(passphrase) * math.log2(pool)
+    rating, style = passphrase_rating(entropy_bits)
+    warnings = passphrase_warnings(passphrase)
+
+    table = Table(title="WiFi Passphrase Strength Estimate", show_lines=True)
+    table.add_column("Metric")
+    table.add_column("Value")
+    table.add_row("Length", str(len(passphrase)))
+    table.add_row("Estimated character pool", str(pool))
+    table.add_row("Estimated entropy", f"{entropy_bits:.1f} bits")
+    table.add_row("Rating", Text(rating, style=style))
+    console.print(table)
+
+    if warnings:
+        console.print("[yellow]Recommendations:[/yellow]")
+        for warning in warnings:
+            console.print(f"- {warning}")
+    else:
+        console.print("[green]No obvious passphrase pattern issues found.[/green]")
+    return 0
+
+
+def simulated_lab_data() -> tuple[list[WirelessInterface], list[VisibleNetwork], list[SavedProfile], list[RiskFinding]]:
+    """Return fake data for a safe educational WiFi lab."""
+
+    interfaces = [
+        WirelessInterface(
+            name="Wi-Fi",
+            state="connected",
+            ssid="HomeLab",
+            authentication="WPA2-Personal",
+            cipher="CCMP",
+            channel="6",
+            signal="92%",
+        )
+    ]
+    networks = [
+        VisibleNetwork(
+            ssid="HomeLab",
+            authentication="WPA2-Personal",
+            encryption="CCMP",
+            signal="92%",
+            channel="6",
+            bssids=["00:11:22:33:44:55"],
+        ),
+        VisibleNetwork(
+            ssid="HomeLab-Guest",
+            authentication="Open",
+            encryption="None",
+            signal="78%",
+            channel="11",
+            bssids=["00:11:22:33:44:66"],
+        ),
+        VisibleNetwork(
+            ssid="<hidden>",
+            authentication="WPA2-Personal",
+            encryption="CCMP",
+            signal="64%",
+            channel="1",
+            bssids=["00:11:22:33:44:77"],
+        ),
+    ]
+    profiles = [
+        SavedProfile(
+            name="HomeLab-Guest",
+            authentication="Open",
+            cipher="None",
+            connection_mode="Connect automatically",
+        ),
+        SavedProfile(
+            name="HomeLab",
+            authentication="WPA2-Personal",
+            cipher="CCMP",
+            connection_mode="Connect automatically",
+        ),
+    ]
+    findings = analyze_visible_networks(networks)
+    findings.extend(analyze_saved_profiles(profiles))
+    return interfaces, networks, profiles, findings
+
+
+def run_lab(args: argparse.Namespace) -> int:
+    """Run a simulated educational lab with fake WiFi data."""
+
+    require_authorization(args.confirm_authorized)
+    assume_yes = bool(args.yes)
+    section(
+        "Simulated Lab",
+        "This lab uses fake WiFi data. It teaches safe audit decisions without "
+        "touching a real network or performing any attack activity.",
+    )
+
+    interfaces, networks, profiles, findings = simulated_lab_data()
+    if ask_yes_no("Lab step 1: review fake wireless interface state?", assume_yes=assume_yes):
+        render_interfaces(interfaces)
+    if ask_yes_no("Lab step 2: review fake visible networks?", assume_yes=assume_yes):
+        render_networks(networks)
+    if ask_yes_no("Lab step 3: review fake saved profiles?", assume_yes=assume_yes):
+        render_profiles(profiles)
+    if ask_yes_no("Lab step 4: identify defensive findings?", assume_yes=assume_yes):
+        render_findings(findings)
+
+    console.print(
+        Panel.fit(
+            "Expected priorities:\n"
+            "1. Remove or secure the open guest network.\n"
+            "2. Disable auto-join for open profiles.\n"
+            "3. Treat hidden SSIDs as privacy-only, not security.\n"
+            "4. Keep WPA2-AES or move to WPA3 where supported.",
+            title="Lab Answer Key",
+            border_style="green",
+        )
+    )
+    return 0
+
+
 def run_audit(args: argparse.Namespace, wizard: bool = False) -> int:
     """Run a guided or non-interactive audit."""
 
@@ -705,6 +946,20 @@ def build_parser() -> argparse.ArgumentParser:
     scan = subparsers.add_parser("scan", help="Run all safe audit steps non-interactively.")
     add_common(scan)
     scan.set_defaults(func=lambda args: run_audit(args, wizard=False))
+
+    learn = subparsers.add_parser("learn", help="Show a safe defensive WiFi learning path.")
+    learn.add_argument("--confirm-authorized", action="store_true", help="Confirm authorized defensive use.")
+    learn.set_defaults(func=run_learn)
+
+    lab = subparsers.add_parser("lab", help="Run a simulated step-by-step WiFi audit lab.")
+    lab.add_argument("--confirm-authorized", action="store_true", help="Confirm authorized defensive use.")
+    lab.add_argument("--yes", action="store_true", help="Assume yes for lab prompts.")
+    lab.set_defaults(func=run_lab)
+
+    passphrase = subparsers.add_parser("passphrase-check", help="Estimate the strength of a sample WiFi passphrase.")
+    passphrase.add_argument("--confirm-authorized", action="store_true", help="Confirm authorized defensive use.")
+    passphrase.add_argument("--sample-passphrase", help="Sample passphrase to evaluate. Prefer a similar pattern, not your real password.")
+    passphrase.set_defaults(func=run_passphrase_check)
 
     interfaces = subparsers.add_parser("interfaces", help="Show wireless interfaces.")
     interfaces.add_argument("--confirm-authorized", action="store_true", help="Confirm authorized defensive use.")

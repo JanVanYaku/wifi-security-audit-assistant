@@ -19,7 +19,9 @@ Use it only on WiFi networks and devices you own or are explicitly authorized to
 ## Features
 
 - Interactive `wizard` mode that prompts before each step.
+- Safe `learn` and simulated `lab` modes for educational use without touching a real target.
 - Non-interactive `scan` mode for a full safe audit.
+- Local passphrase strength estimation for a sample pattern, without saving secrets.
 - Windows `netsh wlan` support for interfaces, visible networks, and saved profile security settings.
 - Linux `nmcli` support for visible network inventory when available.
 - Flags open networks, WEP, TKIP, weak saved profiles, risky auto-join behavior, and hidden SSID misconceptions.
@@ -50,6 +52,32 @@ python .\wifi_audit_assistant.py
 
 ```powershell
 python .\wifi_audit_assistant.py scan --confirm-authorized --include-profiles
+```
+
+## Learn Safely
+
+Show a defensive learning path:
+
+```powershell
+python .\wifi_audit_assistant.py learn --confirm-authorized
+```
+
+Run a simulated step-by-step lab using fake WiFi data:
+
+```powershell
+python .\wifi_audit_assistant.py lab --confirm-authorized
+```
+
+Run the simulated lab without prompts:
+
+```powershell
+python .\wifi_audit_assistant.py lab --confirm-authorized --yes
+```
+
+Estimate a sample passphrase pattern. For privacy, test a similar pattern instead of your real production WiFi password:
+
+```powershell
+python .\wifi_audit_assistant.py passphrase-check --confirm-authorized
 ```
 
 ## Save Reports
@@ -83,4 +111,3 @@ Use findings to:
 - Confirm all access points broadcasting the same SSID are authorized.
 - Keep router and access point firmware updated.
 - Use long unique passphrases or enterprise authentication.
-
