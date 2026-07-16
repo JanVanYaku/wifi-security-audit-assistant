@@ -661,6 +661,114 @@ def write_csv_findings(path: Path, findings: list[RiskFinding]) -> None:
             writer.writerow(asdict(item))
 
 
+def write_json_networks(path: Path, networks: list[VisibleNetwork]) -> None:
+    """Write visible nearby WiFi networks as JSON."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "host_platform": f"{platform.system()} {platform.release()}",
+        "visible_networks": [asdict(network) for network in networks],
+    }
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def write_csv_networks(path: Path, networks: list[VisibleNetwork]) -> None:
+    """Write visible nearby WiFi networks as CSV."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["ssid", "authentication", "encryption", "signal", "channel", "bssids", "radios"],
+        )
+        writer.writeheader()
+        for network in networks:
+            writer.writerow(
+                {
+                    "ssid": network.ssid,
+                    "authentication": network.authentication,
+                    "encryption": network.encryption,
+                    "signal": network.signal,
+                    "channel": network.channel,
+                    "bssids": "; ".join(network.bssids),
+                    "radios": "; ".join(network.radios),
+                }
+            )
+
+
+def render_nearby_networks(networks: list[VisibleNetwork], show_bssids: bool = False) -> None:
+    """Print nearby WiFi networks with optional BSSID details."""
+
+    if show_bssids:
+        table = Table(title="Nearby WiFi Networks", show_lines=True)
+        table.add_column("SSID", overflow="fold")
+        table.add_column("Auth")
+        table.add_column("Encryption")
+        table.add_column("Signal")
+        table.add_column("Channel")
+        table.add_column("BSSID(s)", overflow="fold")
+        table.add_column("Radio(s)", overflow="fold")
+        if not networks:
+            table.add_row("-", "-", "-", "-", "-", "-", "-")
+        for network in networks:
+            table.add_row(
+                network.ssid,
+                network.authentication,
+                network.encryption,
+                network.signal or "-",
+                network.channel or "-",
+                "\n".join(network.bssids) or "-",
+                ", ".join(network.radios) or "-",
+            )
+    else:
+        table = Table(title="Nearby WiFi Networks", show_lines=True)
+        table.add_column("SSID", overflow="fold")
+        table.add_column("Auth")
+        table.add_column("Encryption")
+        table.add_column("Signal")
+        table.add_column("Channel")
+        table.add_column("BSSID Count")
+        if not networks:
+            table.add_row("-", "-", "-", "-", "-", "-")
+        for network in networks:
+            table.add_row(
+                network.ssid,
+                network.authentication,
+                network.encryption,
+                network.signal or "-",
+                network.channel or "-",
+                str(len(network.bssids)),
+            )
+    console.print(table)
+
+
+def run_nearby(args: argparse.Namespace) -> int:
+    """Search for nearby WiFi networks using safe OS scan commands."""
+
+    require_authorization(args.confirm_authorized)
+    section(
+        "Nearby WiFi Search",
+        "Searching nearby WiFi networks with normal operating-system commands.\n"
+        "This does not use monitor mode, packet capture, deauthentication, or cracking.",
+    )
+
+    networks = collect_visible_networks()
+    render_nearby_networks(networks, show_bssids=args.show_bssids)
+
+    if args.analyze:
+        render_findings(analyze_visible_networks(networks))
+
+    if args.json_out:
+        write_json_networks(args.json_out.resolve(), networks)
+        console.print(f"[green]Nearby WiFi JSON saved to {args.json_out.resolve()}[/green]")
+    if args.csv_out:
+        write_csv_networks(args.csv_out.resolve(), networks)
+        console.print(f"[green]Nearby WiFi CSV saved to {args.csv_out.resolve()}[/green]")
+
+    return 0
+
+
 def render_learning_modules() -> None:
     """Print high-level defensive WiFi learning modules."""
 
@@ -946,6 +1054,14 @@ def build_parser() -> argparse.ArgumentParser:
     scan = subparsers.add_parser("scan", help="Run all safe audit steps non-interactively.")
     add_common(scan)
     scan.set_defaults(func=lambda args: run_audit(args, wizard=False))
+
+    nearby = subparsers.add_parser("nearby", help="Search nearby WiFi networks safely.")
+    nearby.add_argument("--confirm-authorized", action="store_true", help="Confirm authorized defensive use.")
+    nearby.add_argument("--show-bssids", action="store_true", help="Show nearby access point BSSID values.")
+    nearby.add_argument("--analyze", action="store_true", help="Show defensive findings for nearby networks.")
+    nearby.add_argument("--json-out", type=Path, help="Save nearby WiFi networks as JSON.")
+    nearby.add_argument("--csv-out", type=Path, help="Save nearby WiFi networks as CSV.")
+    nearby.set_defaults(func=run_nearby)
 
     learn = subparsers.add_parser("learn", help="Show a safe defensive WiFi learning path.")
     learn.add_argument("--confirm-authorized", action="store_true", help="Confirm authorized defensive use.")

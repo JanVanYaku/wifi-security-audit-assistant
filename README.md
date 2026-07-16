@@ -21,6 +21,7 @@ Use it only on WiFi networks and devices you own or are explicitly authorized to
 - Interactive `wizard` mode that prompts before each step.
 - Safe `learn` and simulated `lab` modes for educational use without touching a real target.
 - Non-interactive `scan` mode for a full safe audit.
+- Dedicated `nearby` command to search nearby WiFi networks safely.
 - Local passphrase strength estimation for a sample pattern, without saving secrets.
 - Windows `netsh wlan` support for interfaces, visible networks, and saved profile security settings.
 - Linux `nmcli` support for visible network inventory when available.
@@ -52,6 +53,32 @@ python .\wifi_audit_assistant.py
 
 ```powershell
 python .\wifi_audit_assistant.py scan --confirm-authorized --include-profiles
+```
+
+## Search Nearby WiFi
+
+Show nearby WiFi networks:
+
+```powershell
+python .\wifi_audit_assistant.py nearby --confirm-authorized
+```
+
+Show access point BSSID details too:
+
+```powershell
+python .\wifi_audit_assistant.py nearby --confirm-authorized --show-bssids
+```
+
+Search nearby WiFi and show defensive findings:
+
+```powershell
+python .\wifi_audit_assistant.py nearby --confirm-authorized --analyze
+```
+
+Save nearby WiFi results:
+
+```powershell
+python .\wifi_audit_assistant.py nearby --confirm-authorized --json-out .\reports\nearby_wifi.json --csv-out .\reports\nearby_wifi.csv
 ```
 
 ## Learn Safely
