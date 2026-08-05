@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import csv
 import getpass
+import html
 import json
 import math
 import platform
@@ -87,6 +88,17 @@ class SavedProfile:
 
 
 @dataclass
+class ToolCheck:
+    """Installed WiFi tooling status without running offensive actions."""
+
+    name: str
+    available: bool
+    path: str = ""
+    version: str = ""
+    note: str = ""
+
+
+@dataclass
 class AuditReport:
     """Complete audit output."""
 
@@ -96,6 +108,7 @@ class AuditReport:
     visible_networks: list[VisibleNetwork] = field(default_factory=list)
     saved_profiles: list[SavedProfile] = field(default_factory=list)
     findings: list[RiskFinding] = field(default_factory=list)
+    tool_checks: list[ToolCheck] = field(default_factory=list)
 
 
 SEVERITY_ORDER = {"CRITICAL": 5, "HIGH": 4, "MEDIUM": 3, "LOW": 2, "INFO": 1}
@@ -133,6 +146,44 @@ LEARNING_MODULES = [
     ),
 ]
 
+AIRCRACK_SAFE_WORKFLOW = [
+    (
+        "1. Prepare environment",
+        "Check local WiFi commands and adapter visibility.",
+        "Autopilot checks OS support and available tools, but does not enable monitor mode.",
+    ),
+    (
+        "2. Scan nearby networks",
+        "List SSIDs, security mode, signal, channel, and BSSID count.",
+        "Autopilot uses normal OS WiFi inventory commands only.",
+    ),
+    (
+        "3. Select target",
+        "Limit review to owned or explicitly authorized SSIDs.",
+        "Autopilot reports defensive findings; it does not target another network.",
+    ),
+    (
+        "4. Capture handshake",
+        "Not automated.",
+        "Handshake capture is intentionally blocked because it can support unauthorized cracking.",
+    ),
+    (
+        "5. Deauthenticate clients",
+        "Not automated.",
+        "Client disruption is intentionally blocked.",
+    ),
+    (
+        "6. Crack password",
+        "Not automated.",
+        "Autopilot can estimate a sample passphrase pattern, but it does not run wordlist attacks.",
+    ),
+    (
+        "7. Remediate",
+        "Create hardening recommendations and reports.",
+        "Autopilot writes JSON, CSV, and HTML findings for defensive follow-up.",
+    ),
+]
+
 
 def clean(value: str, limit: int = 220) -> str:
     """Normalize command output for tables and reports."""
@@ -157,6 +208,47 @@ def run_command(command: list[str], timeout: int = 30) -> str:
     except (OSError, subprocess.SubprocessError) as exc:
         return str(exc)
     return "\n".join(part for part in [result.stdout, result.stderr] if part).strip()
+
+
+def command_version(command: str) -> str:
+    """Return a short version string for an installed command."""
+
+    probes = [[command, "--version"], [command, "-v"]]
+    if command == "netsh":
+        probes = [["netsh", "wlan", "show", "drivers"]]
+
+    for probe in probes:
+        output = run_command(probe, timeout=8)
+        if output and "not recognized" not in output.lower():
+            return clean(output, limit=160)
+    return ""
+
+
+def collect_tool_checks() -> list[ToolCheck]:
+    """Detect useful WiFi tools without using offensive capabilities."""
+
+    tool_notes = {
+        "netsh": "Windows OS WiFi inventory command used by this assistant.",
+        "nmcli": "Linux NetworkManager WiFi inventory command used by this assistant.",
+        "aircrack-ng": "Detected for awareness only; cracking is not automated.",
+        "airodump-ng": "Detected for awareness only; packet capture is not automated.",
+        "aireplay-ng": "Detected for awareness only; deauthentication is not automated.",
+        "airmon-ng": "Detected for awareness only; monitor mode is not automated.",
+    }
+
+    checks: list[ToolCheck] = []
+    for name, note in tool_notes.items():
+        path = shutil.which(name) or ""
+        checks.append(
+            ToolCheck(
+                name=name,
+                available=bool(path),
+                path=path,
+                version=command_version(name) if path and name in {"netsh", "nmcli", "aircrack-ng"} else "",
+                note=note,
+            )
+        )
+    return checks
 
 
 def require_authorization(confirm_authorized: bool) -> None:
@@ -622,11 +714,44 @@ def render_findings(findings: list[RiskFinding]) -> None:
     console.print(table)
 
 
+def render_tool_checks(tool_checks: list[ToolCheck]) -> None:
+    """Print detected WiFi-related tools."""
+
+    table = Table(title="Tool Readiness", show_lines=True)
+    table.add_column("Tool")
+    table.add_column("Available")
+    table.add_column("Path", overflow="fold")
+    table.add_column("Note", overflow="fold")
+
+    for item in tool_checks:
+        table.add_row(
+            item.name,
+            Text("yes" if item.available else "no", style="green" if item.available else "yellow"),
+            item.path or "-",
+            item.note,
+        )
+    console.print(table)
+
+
+def render_aircrack_safe_workflow() -> None:
+    """Show how the unsafe Aircrack-ng flow maps to safe automation."""
+
+    table = Table(title="Aircrack-ng PDF Workflow Mapped To Safe Automation", show_lines=True)
+    table.add_column("PDF Stage", overflow="fold")
+    table.add_column("Safe Equivalent", overflow="fold")
+    table.add_column("What Autopilot Does", overflow="fold")
+
+    for stage, safe_equivalent, autopilot_action in AIRCRACK_SAFE_WORKFLOW:
+        table.add_row(stage, safe_equivalent, autopilot_action)
+    console.print(table)
+
+
 def build_report(
     interfaces: list[WirelessInterface],
     networks: list[VisibleNetwork],
     profiles: list[SavedProfile],
     findings: list[RiskFinding],
+    tool_checks: list[ToolCheck] | None = None,
 ) -> AuditReport:
     """Create report dataclass."""
 
@@ -637,6 +762,7 @@ def build_report(
         visible_networks=networks,
         saved_profiles=profiles,
         findings=findings,
+        tool_checks=tool_checks or [],
     )
 
 
@@ -659,6 +785,89 @@ def write_csv_findings(path: Path, findings: list[RiskFinding]) -> None:
         writer.writeheader()
         for item in findings:
             writer.writerow(asdict(item))
+
+
+def write_html_report(path: Path, report: AuditReport) -> None:
+    """Write a standalone HTML report for screenshots and sharing."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    def esc(value: Any) -> str:
+        return html.escape(str(value or "-"))
+
+    def table(headers: list[str], rows: list[list[Any]]) -> str:
+        head = "".join(f"<th>{esc(header)}</th>" for header in headers)
+        body_rows = []
+        for row in rows:
+            body_rows.append("<tr>" + "".join(f"<td>{esc(cell)}</td>" for cell in row) + "</tr>")
+        if not body_rows:
+            body_rows.append(f"<tr><td colspan=\"{len(headers)}\">No records.</td></tr>")
+        return f"<table><thead><tr>{head}</tr></thead><tbody>{''.join(body_rows)}</tbody></table>"
+
+    interface_rows = [
+        [item.name, item.state, item.ssid, item.authentication, item.cipher, item.signal]
+        for item in report.interfaces
+    ]
+    network_rows = [
+        [
+            item.ssid,
+            item.authentication,
+            item.encryption,
+            item.signal,
+            item.channel,
+            len(item.bssids),
+        ]
+        for item in report.visible_networks
+    ]
+    finding_rows = [
+        [item.severity, item.category, item.target, item.issue, item.remediation]
+        for item in sorted(report.findings, key=lambda row: SEVERITY_ORDER.get(row.severity, 0), reverse=True)
+    ]
+    profile_rows = [
+        [item.name, item.authentication, item.cipher, item.connection_mode]
+        for item in report.saved_profiles
+    ]
+    tool_rows = [
+        [item.name, "yes" if item.available else "no", item.path, item.note]
+        for item in report.tool_checks
+    ]
+
+    html_text = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WiFi Security Audit Report</title>
+  <style>
+    :root {{ --ink: #16211d; --muted: #5f6f68; --line: #d8e3de; --brand: #12633f; --warn: #9b6500; --bad: #a2262f; }}
+    body {{ margin: 0; background: #f4f7f5; color: var(--ink); font-family: Arial, Helvetica, sans-serif; line-height: 1.45; }}
+    main {{ width: min(1180px, calc(100% - 32px)); margin: 28px auto; }}
+    section {{ background: white; border: 1px solid var(--line); border-radius: 8px; padding: 18px; margin: 16px 0; box-shadow: 0 12px 32px rgba(20, 42, 31, 0.08); }}
+    h1 {{ margin: 0 0 6px; font-size: 34px; }}
+    h2 {{ margin: 0 0 12px; font-size: 20px; }}
+    p {{ color: var(--muted); }}
+    table {{ width: 100%; border-collapse: collapse; }}
+    th, td {{ border-bottom: 1px solid var(--line); padding: 9px 8px; text-align: left; vertical-align: top; }}
+    th {{ background: #f8fbf9; font-size: 13px; }}
+    .notice {{ border-left: 5px solid var(--brand); }}
+  </style>
+</head>
+<body>
+  <main>
+    <section class="notice">
+      <h1>WiFi Security Audit Report</h1>
+      <p>Generated at {esc(report.generated_at)} on {esc(report.host_platform)}. This report is defensive and does not include password cracking, handshakes, deauthentication, monitor mode, packet injection, or credential capture.</p>
+    </section>
+    <section><h2>Tool Readiness</h2>{table(["Tool", "Available", "Path", "Note"], tool_rows)}</section>
+    <section><h2>Wireless Interfaces</h2>{table(["Name", "State", "SSID", "Auth", "Cipher", "Signal"], interface_rows)}</section>
+    <section><h2>Visible Networks</h2>{table(["SSID", "Auth", "Encryption", "Signal", "Channel", "BSSID Count"], network_rows)}</section>
+    <section><h2>Saved Profiles</h2>{table(["Name", "Auth", "Cipher", "Connection"], profile_rows)}</section>
+    <section><h2>Findings</h2>{table(["Severity", "Category", "Target", "Issue", "Remediation"], finding_rows)}</section>
+  </main>
+</body>
+</html>
+"""
+    path.write_text(html_text, encoding="utf-8")
 
 
 def write_json_networks(path: Path, networks: list[VisibleNetwork]) -> None:
@@ -741,6 +950,75 @@ def render_nearby_networks(networks: list[VisibleNetwork], show_bssids: bool = F
                 str(len(network.bssids)),
             )
     console.print(table)
+
+
+def run_autopilot(args: argparse.Namespace) -> int:
+    """Run the safest automated workflow inspired by the Aircrack-ng learning path."""
+
+    require_authorization(args.confirm_authorized)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = args.output_dir.resolve()
+    json_path = args.json_out.resolve() if args.json_out else output_dir / f"wifi_autopilot_{timestamp}.json"
+    csv_path = args.csv_out.resolve() if args.csv_out else output_dir / f"wifi_autopilot_findings_{timestamp}.csv"
+    html_path = args.html_out.resolve() if args.html_out else output_dir / f"wifi_autopilot_{timestamp}.html"
+
+    section(
+        "Autopilot",
+        "Running the safe automated WiFi audit workflow.\n"
+        "This maps the Aircrack-ng learning sequence to defensive checks only.",
+    )
+    render_aircrack_safe_workflow()
+
+    tool_checks = collect_tool_checks()
+    render_tool_checks(tool_checks)
+
+    interfaces = collect_interfaces()
+    render_interfaces(interfaces)
+
+    networks = collect_visible_networks()
+    if args.show_bssids:
+        render_nearby_networks(networks, show_bssids=True)
+    else:
+        render_networks(networks)
+
+    profiles: list[SavedProfile] = []
+    if args.include_profiles:
+        profiles = collect_saved_profiles()
+        render_profiles(profiles)
+
+    findings = analyze_visible_networks(networks)
+    findings.extend(analyze_saved_profiles(profiles))
+    render_findings(findings)
+
+    report = build_report(interfaces, networks, profiles, findings, tool_checks=tool_checks)
+    write_json_report(json_path, report)
+    write_csv_findings(csv_path, findings)
+    if not args.no_html:
+        write_html_report(html_path, report)
+
+    console.print(f"[green]JSON report saved to {json_path}[/green]")
+    console.print(f"[green]CSV findings saved to {csv_path}[/green]")
+    if not args.no_html:
+        console.print(f"[green]HTML report saved to {html_path}[/green]")
+
+    if args.sample_passphrase:
+        console.print()
+        console.print("[cyan]Sample passphrase check[/cyan]")
+        passphrase_args = argparse.Namespace(
+            confirm_authorized=True,
+            sample_passphrase=args.sample_passphrase,
+        )
+        run_passphrase_check(passphrase_args)
+
+    console.print(
+        Panel.fit(
+            "Autopilot complete. No deauthentication, handshake capture, monitor mode, "
+            "packet injection, password cracking, or password dumping was performed.",
+            title="Safe Completion",
+            border_style="green",
+        )
+    )
+    return 0
 
 
 def run_nearby(args: argparse.Namespace) -> int:
@@ -1054,6 +1332,18 @@ def build_parser() -> argparse.ArgumentParser:
     scan = subparsers.add_parser("scan", help="Run all safe audit steps non-interactively.")
     add_common(scan)
     scan.set_defaults(func=lambda args: run_audit(args, wizard=False))
+
+    autopilot = subparsers.add_parser("autopilot", help="Run the automated safe Aircrack-ng-inspired audit workflow.")
+    autopilot.add_argument("--confirm-authorized", action="store_true", help="Confirm authorized defensive use.")
+    autopilot.add_argument("--include-profiles", action="store_true", help="Review saved profile security settings without showing passwords.")
+    autopilot.add_argument("--show-bssids", action="store_true", help="Show nearby access point BSSID values.")
+    autopilot.add_argument("--output-dir", type=Path, default=Path("reports"), help="Directory for automatic report files.")
+    autopilot.add_argument("--json-out", type=Path, help="Save full JSON report to this path.")
+    autopilot.add_argument("--csv-out", type=Path, help="Save findings CSV report to this path.")
+    autopilot.add_argument("--html-out", type=Path, help="Save HTML report to this path.")
+    autopilot.add_argument("--no-html", action="store_true", help="Do not create the HTML report.")
+    autopilot.add_argument("--sample-passphrase", help="Optional sample passphrase pattern to estimate after the scan.")
+    autopilot.set_defaults(func=run_autopilot)
 
     nearby = subparsers.add_parser("nearby", help="Search nearby WiFi networks safely.")
     nearby.add_argument("--confirm-authorized", action="store_true", help="Confirm authorized defensive use.")

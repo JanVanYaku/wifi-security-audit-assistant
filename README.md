@@ -19,6 +19,7 @@ Use it only on WiFi networks and devices you own or are explicitly authorized to
 ## Features
 
 - Interactive `wizard` mode that prompts before each step.
+- Automated `autopilot` mode that follows a safe Aircrack-ng-inspired audit sequence.
 - Safe `learn` and simulated `lab` modes for educational use without touching a real target.
 - Non-interactive `scan` mode for a full safe audit.
 - Dedicated `nearby` command to search nearby WiFi networks safely.
@@ -28,6 +29,7 @@ Use it only on WiFi networks and devices you own or are explicitly authorized to
 - Flags open networks, WEP, TKIP, weak saved profiles, risky auto-join behavior, and hidden SSID misconceptions.
 - Does not reveal saved WiFi passwords or secrets.
 - JSON and CSV report export.
+- HTML report export for screenshots and GitHub demonstrations.
 
 ## Setup
 
@@ -47,6 +49,26 @@ You can also run the default wizard by launching the script with no command:
 
 ```powershell
 python .\wifi_audit_assistant.py
+```
+
+## Run Automated Safe Autopilot
+
+This is the closest safe version of the Aircrack-ng PDF workflow. It checks local WiFi tooling, scans nearby networks through normal OS commands, reviews defensive findings, and saves reports automatically. It does not run monitor mode, handshake capture, deauthentication, packet injection, cracking, or password dumping.
+
+```powershell
+python .\wifi_audit_assistant.py autopilot --confirm-authorized --include-profiles
+```
+
+Show BSSID details and save reports to a chosen folder:
+
+```powershell
+python .\wifi_audit_assistant.py autopilot --confirm-authorized --include-profiles --show-bssids --output-dir .\reports
+```
+
+Optionally test a sample password pattern after the audit. Do not type your real WiFi password; use a similar pattern:
+
+```powershell
+python .\wifi_audit_assistant.py autopilot --confirm-authorized --sample-passphrase "MyExamplePattern2026!"
 ```
 
 ## Run A Full Safe Scan
